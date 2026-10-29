@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* Palette del Gestionale Territori WelfareCare */
+:root {
+  --background: #f5f8fa;
+  --surface: #ffffff;
+  --surface-muted: #eef5f9;
+  --foreground: #16232b;
+  --text-secondary: #526572;
+  --text-muted: #6b7c87;
+  --border: #dce6ea;
+  --border-strong: #c0d1d8;
+  --accent: #1a86bd;
+  --accent-bg: #e4f2f9;
+  --accent-text: #0e5477;
+  --danger: #c8372b;
+  --danger-bg: #fbeae8;
+  --danger-text: #a12b21;
+  --warning-bg: #faf1da;
+  --warning-text: #7a5410;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-text: var(--danger-text);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-text: var(--warning-text);
+  --font-sans: "Poppins", system-ui, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select,
+textarea {
+  font-family: inherit;
+  font-size: 14px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--foreground);
+  outline: none;
+  width: 100%;
+}
+textarea { min-height: 90px; }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; accent-color: var(--accent-text); }
+
+button { font-family: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 42px; padding: 8px 14px; border-radius: 8px; font-size: 14px; font-weight: 500;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--foreground);
+  text-decoration: none; text-align: center;
+}
+.btn:hover:not(:disabled) { background: var(--surface-muted); }
+.btn-primary { background: var(--accent-text); border-color: var(--accent-text); color: #fff; font-weight: 600; }
+.btn-primary:hover:not(:disabled) { background: #0a3d57; }
+.btn-dark { background: var(--foreground); border-color: var(--foreground); color: #fff; font-weight: 600; }
+.btn-dark:hover:not(:disabled) { background: #0c161c; }
+.btn-danger { color: var(--danger-text); border-color: #f1c4bf; }
+.btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
+.btn-sm { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+
+.tag { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--surface-muted); color: var(--text-secondary); white-space: nowrap; }
+.tag-blue { background: var(--accent-bg); color: var(--accent-text); }
+.tag-warn { background: var(--warning-bg); color: var(--warning-text); }
+.tag-red { background: var(--danger-bg); color: var(--danger-text); }
+
+.label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.k { font-size: 12px; color: var(--text-secondary); }
+
+.tabella { width: 100%; border-collapse: collapse; }
+.tabella th { font-size: 12px; color: var(--text-secondary); font-weight: 500; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tabella td { font-size: 14px; padding: 10px 12px; border-bottom: 1px solid var(--surface-muted); vertical-align: top; }
+.tabella tr:last-child td { border-bottom: none; }
+
+.avviso { border-radius: 10px; padding: 12px 14px; font-size: 14px; }
+.avviso-err { background: var(--danger-bg); color: var(--danger-text); }
+.avviso-ok { background: var(--accent-bg); color: var(--accent-text); }
+.avviso-warn { background: var(--warning-bg); color: var(--warning-text); }
