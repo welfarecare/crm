@@ -27,6 +27,7 @@ export default function AggiuntaLibera({ campagnaId, cercaArchivio, comune }: { 
     const { error } = await createClient().rpc("aggiungi_a_campagna", { p_campagna: campagnaId, p_azienda: id });
     if (error) return setMsg({ ok: false, t: error.message });
     setAggiunte(new Set(aggiunte).add(id));
+    setMsg({ ok: true, t: "Aggiunta alla lista." });
     router.refresh();
   }
 
@@ -45,7 +46,7 @@ export default function AggiuntaLibera({ campagnaId, cercaArchivio, comune }: { 
       <h2 className="font-semibold">Aggiunta libera</h2>
       {cercaArchivio && (
         <>
-          <form onSubmit={cerca} className="flex gap-2">
+          <form onSubmit={cerca} autoComplete="off" className="flex gap-2">
             <label className="sr-only" htmlFor="cerca-arch">Cerca nell&apos;archivio</label>
             <input id="cerca-arch" placeholder="Cerca nell'archivio: nome, P.IVA, telefono" value={testo} onChange={(e) => setTesto(e.target.value)} />
             <button className="btn">Cerca</button>
@@ -68,7 +69,7 @@ export default function AggiuntaLibera({ campagnaId, cercaArchivio, comune }: { 
       {!nuova ? (
         <button className="btn self-start" onClick={() => setNuova(true)}>+ Nuova azienda a mano</button>
       ) : (
-        <form onSubmit={crea} className="flex flex-col gap-2.5 border-t border-border pt-3">
+        <form onSubmit={crea} autoComplete="off" className="flex flex-col gap-2.5 border-t border-border pt-3">
           {(
             [["ragione_sociale", "Ragione sociale"], ["telefono", "Telefono"], ["piva", "P.IVA"], ["comune", "Comune"], ["email", "Mail"]] as const
           ).map(([k, l]) => (

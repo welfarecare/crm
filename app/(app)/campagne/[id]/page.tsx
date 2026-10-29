@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { giornoOra, nomeCampagna, numero } from "@/lib/format";
 import { ESITO_LABEL, STATO_CA_LABEL, type EsitoChiamata, type StatoCampagna, type StatoInCampagna } from "@/lib/types";
 import StatoSelect from "./StatoSelect";
+import GestioneCampagna from "./GestioneCampagna";
 import ComponiLista from "./ComponiLista";
 import AggiuntaLibera from "./AggiuntaLibera";
 
@@ -62,7 +63,12 @@ export default async function CampagnaPage({ params, searchParams }: PageProps<"
           )}
         </div>
         <div className="flex gap-2 items-center">
-          {componi ? <StatoSelect id={id} stato={c.stato as StatoCampagna} /> : null}
+          {componi ? (
+            <>
+              <GestioneCampagna id={id} comune={c.comune} edizione={c.edizione} note={c.note} puoEliminare={p.ruolo === "admin"} />
+              <StatoSelect id={id} stato={c.stato as StatoCampagna} />
+            </>
+          ) : null}
           {c.stato === "in_corso" && (p.ruolo === "admin" || p.ruolo === "operatore") && <Link className="btn btn-primary" href={`/coda?c=${id}`}>Apri la coda</Link>}
         </div>
       </div>

@@ -20,11 +20,14 @@ export default function NuovaCampagna() {
     const { data, error } = await createClient().rpc("crea_campagna", { p_comune: comune, p_edizione: edizione, p_note: note });
     setBusy(false);
     if (error) return setErrore(error.message);
+    setComune("");
+    setNote("");
+    setEdizione(String(new Date().getFullYear() + 1));
     router.push(`/campagne/${data}`);
   }
 
   return (
-    <form onSubmit={crea} className="max-w-lg flex flex-col gap-4">
+    <form onSubmit={crea} autoComplete="off" className="max-w-lg flex flex-col gap-4">
       <Link href="/campagne" className="text-sm">← Campagne</Link>
       <h1 className="text-2xl font-semibold">Nuova campagna</h1>
       <div className="card p-5 flex flex-col gap-4">

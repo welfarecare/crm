@@ -28,6 +28,7 @@ export default function Referenti({ aziendaId, referenti, modificabile }: { azie
       : await sb.from("referenti").update(dati).eq("id", inModifica!);
     if (error) return setErrore(error.message);
     setInModifica(null);
+    setF(VUOTO);
     router.refresh();
   }
 

@@ -20,18 +20,20 @@ export default function NuovoUtente() {
 
   function crea(e: React.FormEvent) {
     e.preventDefault();
+    setMsg(null);
     if (!passwordValida(f.password)) return setMsg({ ok: false, t: REGOLA_PASSWORD });
     start(async () => {
       const r = await creaUtente(f);
       if (!r.ok) return setMsg({ ok: false, t: r.errore });
-      setMsg({ ok: true, t: `Utente creato. Comunica a voce email e password temporanea: ${f.password}` });
+      setMsg({ ok: true, t: `Utente creato: ${f.email}. Password da comunicare a voce: ${f.password}` });
+      setF({ email: "", nome: "", ruolo: "operatore", password: passwordCasuale(), zona: "" });
       router.push(`/controllo?u=${r.id}`);
       router.refresh();
     });
   }
 
   return (
-    <form onSubmit={crea} className="card p-5 flex flex-col gap-3">
+    <form onSubmit={crea} autoComplete="off" className="card p-5 flex flex-col gap-3">
       <h2 className="font-semibold">Nuovo utente</h2>
       <div><label className="label" htmlFor="n-nome">Nome</label><input id="n-nome" required value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} /></div>
       <div><label className="label" htmlFor="n-email">Email</label><input id="n-email" type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
@@ -53,7 +55,7 @@ export default function NuovoUtente() {
       {msg && <div className={`avviso ${msg.ok ? "avviso-ok" : "avviso-err"}`}>{msg.t}</div>}
       <div className="flex gap-2">
         <button className="btn btn-primary" disabled={pending}>Crea utente</button>
-        <button type="button" className="btn" onClick={() => setAperto(false)}>Chiudi</button>
+        <button type="button" className="btn" onClick={() => { setAperto(false); setMsg(null); }}>Chiudi</button>
       </div>
     </form>
   );
