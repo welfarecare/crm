@@ -1,4 +1,4 @@
--- WelfareCare · CRM Telemarketing — installazione completa (tappa 1 + sicurezza)
+-- WelfareCare · CRM Telemarketing — installazione completa
 -- Per un progetto NUOVO. Incolla tutto nel SQL Editor di Supabase ed esegui UNA volta.
 
 -- =====================================================================
@@ -1046,3 +1046,326 @@ $$;
 
 revoke execute on all functions in schema public from public, anon;
 grant execute on all functions in schema public to authenticated, service_role;
+
+-- =====================================================================
+-- Aggiornamento sicurezza 2: riduce ciò che è raggiungibile dall'esterno
+-- (segnalazioni del Security Advisor di Supabase).
+-- Da eseguire una volta nel SQL Editor, DOPO 05_doppia_verifica.sql.
+-- =====================================================================
+
+-- 1) Zona privata del database, NON esposta dalle API
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated, service_role;
+
+-- 2) Funzioni di controllo e trigger: spostate nella zona privata.
+--    Le regole di sicurezza continuano a usarle (sono collegate per riferimento).
+alter function public.mio_ruolo() set schema private;
+alter function public.is_admin() set schema private;
+alter function public.vede_tutto() set schema private;
+alter function public.puo_scrivere() set schema private;
+alter function public.ha_permesso(text) set schema private;
+alter function public.vede_campagna(uuid) set schema private;
+alter function public.vede_azienda(uuid) set schema private;
+alter function public.crea_profilo() set schema private;
+alter function public.traccia_modifiche_azienda() set schema private;
+
+-- 3) Funzioni di normalizzazione: percorso di ricerca fisso
+alter function public.norm_tel(text) set search_path = '';
+alter function public.norm_piva(text) set search_path = '';
+alter function public.norm_testo(text) set search_path = '';
+
+-- 4) Funzioni di sola lettura: girano con i permessi di chi le usa
+--    (le regole per riga filtrano già i dati)
+alter function public.statistiche_campagne() security invoker;
+alter function public.conteggi_campagna(uuid) security invoker;
+alter function public.stato_coda(uuid) security invoker;
+alter function public.anteprima_coda(uuid, int) security invoker;
+
+-- 5) Tutte le funzioni trovano quelle private
+do $$
+declare f record;
+begin
+  for f in
+    select p.oid::regprocedure as firma
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private')
+      and p.proname not in ('norm_tel', 'norm_piva', 'norm_testo')
+      and p.prokind = 'f'
+  loop
+    execute format('alter function %s set search_path = public, private', f.firma);
+  end loop;
+end $$;
+
+-- 6) Permessi di esecuzione
+revoke execute on all functions in schema private from public, anon;
+grant execute on all functions in schema private to authenticated, service_role;
+-- i trigger non devono essere chiamabili da nessuno
+revoke execute on function private.crea_profilo() from authenticated;
+revoke execute on function private.traccia_modifiche_azienda() from authenticated;
+
+-- =====================================================================
+-- Modifica ed eliminazione campagne.
+-- Si può eliminare SOLO una campagna senza chiamate né appuntamenti,
+-- così lo storico di chi ha fatto cosa non va mai perso.
+-- Da eseguire una volta nel SQL Editor di Supabase.
+-- =====================================================================
+
+create or replace function public.modifica_campagna(p_campagna uuid, p_comune text, p_edizione text, p_note text default null)
+returns void
+language plpgsql security definer set search_path = public, private as $$
+begin
+  if not (ha_permesso('creare_campagne') and vede_campagna(p_campagna)) then
+    raise exception 'Non hai il permesso di modificare questa campagna';
+  end if;
+  if nullif(trim(p_comune), '') is null or nullif(trim(p_edizione), '') is null then
+    raise exception 'Comune ed edizione sono obbligatori';
+  end if;
+  if exists (select 1 from campagne where id <> p_campagna
+             and norm_testo(comune) = norm_testo(p_comune) and trim(edizione) = trim(p_edizione)) then
+    raise exception 'Esiste già una campagna per % edizione %', trim(p_comune), trim(p_edizione);
+  end if;
+  update campagne set comune = trim(p_comune), edizione = trim(p_edizione), note = nullif(trim(coalesce(p_note, '')), '')
+  where id = p_campagna;
+  perform registra_attivita('ha modificato la campagna ' || trim(p_comune) || ' · ' || trim(p_edizione));
+end $$;
+
+create or replace function public.elimina_campagna(p_campagna uuid)
+returns void
+language plpgsql security definer set search_path = public, private as $$
+declare v campagne%rowtype; n_ch int; n_ap int;
+begin
+  if not is_admin() then raise exception 'Solo l''amministratore può eliminare una campagna'; end if;
+  select * into v from campagne where id = p_campagna;
+  if v.id is null then raise exception 'Campagna non trovata'; end if;
+  select count(*) into n_ch from chiamate where campagna_id = p_campagna;
+  select count(*) into n_ap from appuntamenti where campagna_id = p_campagna;
+  if n_ch > 0 or n_ap > 0 then
+    raise exception 'La campagna ha già % chiamate e % appuntamenti: non si può eliminare. Mettila “Chiusa”: lo storico resta consultabile.', n_ch, n_ap;
+  end if;
+  delete from campagne where id = p_campagna;  -- toglie anche lista e assegnazioni; le aziende restano in archivio
+  perform registra_attivita('ha eliminato la campagna ' || v.comune || ' · ' || v.edizione);
+end $$;
+
+revoke execute on function public.modifica_campagna(uuid, text, text, text) from public, anon;
+revoke execute on function public.elimina_campagna(uuid) from public, anon;
+grant execute on function public.modifica_campagna(uuid, text, text, text) to authenticated, service_role;
+grant execute on function public.elimina_campagna(uuid) to authenticated, service_role;
+
+-- =====================================================================
+-- Import intelligente: un numero di telefono in comune NON basta più
+-- per considerare due aziende doppioni (es. aziende dello stesso gruppo
+-- con lo stesso centralino): serve anche un nome simile.
+-- Da eseguire una volta nel SQL Editor di Supabase.
+-- =====================================================================
+
+-- nome "pulito" per confronti: minuscolo, senza forma giuridica né punteggiatura
+create or replace function private.norm_nome(t text) returns text
+language sql immutable set search_path = '' as $$
+  select trim(regexp_replace(
+           regexp_replace(lower(coalesce(t, '')),
+             '\m(s\.?r\.?l\.?s?|s\.?p\.?a\.?|s\.?n\.?c\.?|s\.?a\.?s\.?|s\.?s\.?d\.?|societa|società|soc\.?|coop\.?|cooperativa|unipersonale|in liquidazione)\M', ' ', 'g'),
+           '[^a-z0-9àèéìòù]+', ' ', 'g'))
+$$;
+revoke execute on function private.norm_nome(text) from public, anon;
+grant execute on function private.norm_nome(text) to authenticated, service_role;
+
+create index if not exists aziende_nome_norm on aziende (private.norm_nome(ragione_sociale));
+
+create or replace function public.importa_aziende(
+  p_righe jsonb,
+  p_fonte uuid,
+  p_campagna uuid default null,
+  p_anteprima boolean default true,
+  p_includi_doppioni boolean default false
+) returns jsonb
+language plpgsql security definer set search_path = public, private, extensions as $$
+declare
+  r jsonb;
+  v_piva text;
+  v_tel text;
+  v_esistente aziende%rowtype;
+  v_id uuid;
+  n_nuove int := 0;
+  n_aggiornate int := 0;
+  n_doppioni int := 0;
+  n_non_chiamare int := 0;
+  n_scartate int := 0;
+  n_in_campagna int := 0;
+  doppioni jsonb := '[]'::jsonb;
+  v_ins int;
+  viste_piva text[] := '{}';
+  visti_tel text[] := '{}';
+  visti_nomi text[] := '{}';
+begin
+  if not ha_permesso('importare') then raise exception 'Non hai il permesso di importare'; end if;
+  if p_campagna is not null and not vede_campagna(p_campagna) then
+    raise exception 'Non autorizzato su questa campagna';
+  end if;
+  perform set_config('app.fonte', 'import', true);
+
+  for r in select * from jsonb_array_elements(p_righe) loop
+    if nullif(trim(r->>'ragione_sociale'), '') is null then
+      n_scartate := n_scartate + 1;
+      continue;
+    end if;
+
+    v_piva := norm_piva(r->>'piva');
+    v_tel := norm_tel(r->>'telefono');
+    v_id := null;
+    v_esistente := null;
+
+    if v_piva is not null then
+      select * into v_esistente from aziende where piva_norm = v_piva;
+    end if;
+
+    if v_esistente.id is not null then
+      if v_esistente.non_chiamare then
+        n_non_chiamare := n_non_chiamare + 1;
+        continue;
+      end if;
+      n_aggiornate := n_aggiornate + 1;
+      v_id := v_esistente.id;
+      if not p_anteprima then
+        -- completa solo i campi vuoti, non sovrascrive dati già verificati
+        update aziende set
+          telefono = coalesce(telefono, nullif(r->>'telefono', '')),
+          email = coalesce(email, nullif(r->>'email', '')),
+          sito = coalesce(sito, nullif(r->>'sito', '')),
+          indirizzo = coalesce(indirizzo, nullif(r->>'indirizzo', '')),
+          comune = coalesce(comune, nullif(r->>'comune', '')),
+          provincia = coalesce(provincia, nullif(r->>'provincia', '')),
+          cap = coalesce(cap, nullif(r->>'cap', '')),
+          settore = coalesce(settore, nullif(r->>'settore', '')),
+          dipendenti = coalesce(dipendenti, nullif(regexp_replace(coalesce(r->>'dipendenti', ''), '\D', '', 'g'), '')::int)
+        where id = v_id;
+      end if;
+    else
+      -- 1) stesso nome (pulito) nello stesso comune = stessa azienda
+      if nullif(private.norm_nome(r->>'ragione_sociale'), '') is not null then
+        select a.* into v_esistente from aziende a
+        where private.norm_nome(a.ragione_sociale) = private.norm_nome(r->>'ragione_sociale')
+          and (a.comune_norm is null or norm_testo(r->>'comune') is null or a.comune_norm = norm_testo(r->>'comune'))
+        limit 1;
+      end if;
+      if v_esistente.id is not null then
+        if v_esistente.non_chiamare then
+          n_non_chiamare := n_non_chiamare + 1;
+          continue;
+        end if;
+        n_aggiornate := n_aggiornate + 1;
+        v_id := v_esistente.id;
+        if not p_anteprima then
+          update aziende set
+            telefono = coalesce(telefono, nullif(r->>'telefono', '')),
+            email = coalesce(email, nullif(r->>'email', '')),
+            indirizzo = coalesce(indirizzo, nullif(r->>'indirizzo', '')),
+            comune = coalesce(comune, nullif(trim(r->>'comune'), '')),
+            note = coalesce(note, nullif(r->>'note', ''))
+          where id = v_id;
+        end if;
+      else
+      -- 2) stesso telefono è un doppione solo se anche il nome è simile
+      --    (aziende dello stesso gruppo spesso condividono il centralino)
+      if v_tel is not null then
+        select a.* into v_esistente from aziende a
+        where a.telefono_norm = v_tel
+          and similarity(private.norm_nome(a.ragione_sociale), private.norm_nome(r->>'ragione_sociale')) >= 0.35
+        order by similarity(private.norm_nome(a.ragione_sociale), private.norm_nome(r->>'ragione_sociale')) desc
+        limit 1;
+      end if;
+      if v_esistente.id is not null and v_esistente.non_chiamare then
+        n_non_chiamare := n_non_chiamare + 1;
+        continue;
+      end if;
+      -- in anteprima riconosco anche i doppioni interni al file
+      if p_anteprima and v_esistente.id is null then
+        if v_piva is not null and v_piva = any (viste_piva) then
+          n_aggiornate := n_aggiornate + 1;
+          continue;
+        end if;
+        if private.norm_nome(r->>'ragione_sociale') = any (visti_nomi) then
+          n_aggiornate := n_aggiornate + 1;
+          continue;
+        end if;
+        if v_tel is not null and not p_includi_doppioni and exists (
+             select 1 from unnest(visti_tel, visti_nomi) as x(t, n)
+             where x.t = v_tel and similarity(x.n, private.norm_nome(r->>'ragione_sociale')) >= 0.35) then
+          n_doppioni := n_doppioni + 1;
+          continue;
+        end if;
+        viste_piva := viste_piva || v_piva;
+        visti_tel := visti_tel || v_tel;
+        visti_nomi := visti_nomi || private.norm_nome(r->>'ragione_sociale');
+      end if;
+      if v_esistente.id is not null and not p_includi_doppioni then
+        n_doppioni := n_doppioni + 1;
+        if jsonb_array_length(doppioni) < 200 then
+          doppioni := doppioni || jsonb_build_object(
+            'nel_file', r->>'ragione_sociale',
+            'telefono', r->>'telefono',
+            'gia_presente', v_esistente.ragione_sociale,
+            'azienda_id', v_esistente.id);
+        end if;
+        continue;
+      end if;
+      n_nuove := n_nuove + 1;
+      if not p_anteprima then
+        insert into aziende (ragione_sociale, piva, telefono, email, sito, indirizzo, comune,
+                             provincia, cap, settore, dipendenti, note, fonte_id, created_by)
+        values (trim(r->>'ragione_sociale'), nullif(r->>'piva', ''), nullif(r->>'telefono', ''),
+                nullif(r->>'email', ''), nullif(r->>'sito', ''), nullif(r->>'indirizzo', ''),
+                nullif(trim(r->>'comune'), ''), nullif(r->>'provincia', ''), nullif(r->>'cap', ''),
+                nullif(r->>'settore', ''),
+                nullif(regexp_replace(coalesce(r->>'dipendenti', ''), '\D', '', 'g'), '')::int,
+                nullif(r->>'note', ''), p_fonte, auth.uid())
+        on conflict (piva_norm) where piva_norm is not null do nothing
+        returning id into v_id;
+        if v_id is null then
+          -- stessa P.IVA comparsa due volte nello stesso file
+          select id into v_id from aziende where piva_norm = v_piva;
+          n_nuove := n_nuove - 1;
+          n_aggiornate := n_aggiornate + 1;
+        elsif nullif(trim(r->>'referente_nome'), '') is not null then
+          insert into referenti (azienda_id, nome, ruolo, telefono, email)
+          values (v_id, trim(r->>'referente_nome'), nullif(r->>'referente_ruolo', ''),
+                  nullif(r->>'referente_telefono', ''), nullif(r->>'referente_email', ''));
+        end if;
+      end if;
+      end if;
+    end if;
+
+    if p_campagna is not null then
+      if p_anteprima then
+        if v_id is null or not exists (select 1 from campagna_aziende where campagna_id = p_campagna and azienda_id = v_id) then
+          n_in_campagna := n_in_campagna + 1;
+        end if;
+      elsif v_id is not null then
+        insert into campagna_aziende (campagna_id, azienda_id, aggiunta_da)
+        values (p_campagna, v_id, auth.uid())
+        on conflict do nothing;
+        get diagnostics v_ins = row_count;
+        n_in_campagna := n_in_campagna + v_ins;
+      end if;
+    end if;
+  end loop;
+
+  if not p_anteprima and p_fonte is not null then
+    update fonti_liste set righe_importate = righe_importate + n_nuove where id = p_fonte;
+  end if;
+
+  return jsonb_build_object(
+    'nuove', n_nuove, 'aggiornate', n_aggiornate, 'doppioni', n_doppioni,
+    'non_chiamare', n_non_chiamare, 'scartate', n_scartate,
+    'in_campagna', n_in_campagna, 'elenco_doppioni', doppioni);
+end $$;
+
+revoke execute on function public.importa_aziende(jsonb, uuid, uuid, boolean, boolean) from public, anon;
+grant execute on function public.importa_aziende(jsonb, uuid, uuid, boolean, boolean) to authenticated, service_role;
+
+-- =====================================================================
+-- Tappa 2: collegamento Google Calendar (link Meet sugli appuntamenti)
+-- Da eseguire una volta nel SQL Editor di Supabase.
+-- =====================================================================
+alter table appuntamenti add column if not exists meet_link text;
+

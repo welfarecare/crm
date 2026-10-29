@@ -12,6 +12,7 @@ import {
   type EsitoChiamata,
 } from "@/lib/types";
 import { dataOra, giornoOra, isoDaLocale, messaggioErrore, numero, ora } from "@/lib/format";
+import { disponibilita, inviaAlCalendario } from "@/lib/calendarioAzioni";
 
 type Azienda = {
   id: string;
@@ -82,6 +83,12 @@ export default function CodaClient({
   const [referenteApp, setReferenteApp] = useState("");
   const [noteIncaricato, setNoteIncaricato] = useState("");
   const [impegni, setImpegni] = useState<{ inizio: string; fine: string }[]>([]);
+  const [daGoogle, setDaGoogle] = useState(false);
+  const [avvisoCal, setAvvisoCal] = useState<string | null>(null);
+  const [caricoOrari, setCaricoOrari] = useState(false);
+  const [adesso, setAdesso] = useState(0);
+  const [invitaAzienda, setInvitaAzienda] = useState(true);
+  const [esitoSalvataggio, setEsitoSalvataggio] = useState<{ ok: boolean; t: string } | null>(null);
 
   const resetForm = () => {
     setEsito(null);
@@ -96,6 +103,8 @@ export default function CodaClient({
     setReferenteApp("");
     setNoteIncaricato("");
     setImpegni([]);
+    setAvvisoCal(null);
+    setInvitaAzienda(true);
   };
 
   const aggiornaContorno = useCallback(async () => {
@@ -178,17 +187,41 @@ export default function CodaClient({
     carica();
   }, [carica]);
 
-  // orari già occupati dell'incaricato nel giorno scelto
+  // orari occupati dell'incaricato nel giorno scelto (Google Calendar + CRM)
   useEffect(() => {
     if (esito !== "appuntamento" || !incaricato || !appData) return;
     let attivo = true;
-    supabase.rpc("impegni_incaricato", { p_incaricato: incaricato, p_giorno: appData }).then(({ data }) => {
-      if (attivo) setImpegni((data ?? []) as { inizio: string; fine: string }[]);
-    });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCaricoOrari(true);
+    disponibilita(incaricato, appData)
+      .then((r) => {
+        if (!attivo) return;
+        setAdesso(Date.now());
+        setImpegni(r.occupato);
+        setDaGoogle(r.google);
+        setAvvisoCal(r.avviso ?? null);
+      })
+      .catch((e) => attivo && setAvvisoCal(messaggioErrore(e)))
+      .finally(() => attivo && setCaricoOrari(false));
     return () => {
       attivo = false;
     };
-  }, [esito, incaricato, appData, supabase]);
+  }, [esito, incaricato, appData]);
+
+  // orari di partenza liberi, ogni 30 minuti dalle 8:30 alle 18:00
+  const orariLiberi = (() => {
+    if (!appData) return [] as string[];
+    const out: string[] = [];
+    for (let m = 8 * 60 + 30; m <= 18 * 60; m += 30) {
+      const hhmm = `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      const i = new Date(isoDaLocale(appData, hhmm)).getTime();
+      const f = i + durata * 60000;
+      if (i < adesso + 30 * 60000) continue;
+      const libero = !impegni.some((x) => new Date(x.inizio).getTime() < f && new Date(x.fine).getTime() > i);
+      if (libero) out.push(hhmm);
+    }
+    return out;
+  })();
 
   const infoEsito = ESITI.find((e) => e.value === esito);
 
@@ -210,7 +243,8 @@ export default function CodaClient({
     }
 
     setSalvataggio(true);
-    const { error } = await supabase.rpc("registra_chiamata", {
+    setEsitoSalvataggio(null);
+    const { data: chiamataId, error } = await supabase.rpc("registra_chiamata", {
       p_ca: corrente.id,
       p_esito: esito,
       p_note: note,
@@ -218,8 +252,15 @@ export default function CodaClient({
       p_richiamo: richiamo,
       p_app: app,
     });
+    if (error) {
+      setSalvataggio(false);
+      return setErrore(error.message);
+    }
+    if (esito === "appuntamento") {
+      const r = await inviaAlCalendario({ chiamataId: chiamataId as string, invitaAzienda });
+      setEsitoSalvataggio({ ok: r.ok, t: r.ok ? `Appuntamento fissato. ${r.messaggio}` : r.messaggio });
+    }
     setSalvataggio(false);
-    if (error) return setErrore(error.message);
     resetForm();
     carica();
   }
@@ -260,6 +301,12 @@ export default function CodaClient({
       </div>
 
       {errore && <div className="avviso avviso-err">{errore}</div>}
+      {esitoSalvataggio && (
+        <div className={`avviso ${esitoSalvataggio.ok ? "avviso-ok" : "avviso-warn"} flex justify-between gap-3`}>
+          <span>{esitoSalvataggio.t}</span>
+          <button className="text-sm underline" onClick={() => setEsitoSalvataggio(null)}>Chiudi</button>
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-3">
         {/* azienda corrente */}
@@ -424,15 +471,33 @@ export default function CodaClient({
                     </div>
                   </div>
                   {incaricato && appData && (
-                    <div className="text-sm text-text-secondary">
-                      {impegni.length === 0
-                        ? "L'incaricato non ha altri appuntamenti in questo giorno."
-                        : `Già occupato: ${impegni.map((i) => `${ora(i.inizio)}–${ora(i.fine)}`).join(", ")}`}
+                    <div className="flex flex-col gap-2">
+                      <div className="text-sm font-semibold">
+                        Orari liberi{daGoogle ? " (dal Google Calendar dell'incaricato)" : ""}
+                      </div>
+                      {caricoOrari ? (
+                        <p className="text-sm text-text-secondary">Controllo il calendario…</p>
+                      ) : orariLiberi.length === 0 ? (
+                        <p className="text-sm text-text-secondary">Nessun orario libero in questo giorno: prova un altro giorno o scrivi l&apos;ora a mano.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {orariLiberi.map((o) => (
+                            <button key={o} type="button" aria-pressed={appOra === o} onClick={() => setAppOra(o)} className={`btn btn-sm ${appOra === o ? "btn-primary" : ""}`}>{o}</button>
+                          ))}
+                        </div>
+                      )}
+                      {impegni.length > 0 && (
+                        <p className="text-xs text-text-secondary">Occupato: {impegni.map((i) => `${ora(i.inizio)}–${ora(i.fine)}`).join(", ")}</p>
+                      )}
+                      {avvisoCal && <div className="avviso avviso-warn text-sm">Calendario non leggibile: {avvisoCal}. Vedi solo gli appuntamenti del CRM.</div>}
                     </div>
                   )}
-                  <div className="text-xs text-text-secondary">
-                    Nella tappa 2 qui comparirà il calendario Google dell&apos;incaricato e partirà la mail di conferma.
-                  </div>
+                  {(referenti.find((r) => r.id === referenteApp)?.email || corrente?.azienda.email) && (
+                    <label className="flex gap-2 items-start text-sm">
+                      <input type="checkbox" checked={invitaAzienda} onChange={(e) => setInvitaAzienda(e.target.checked)} />
+                      <span>Manda l&apos;invito anche a {referenti.find((r) => r.id === referenteApp)?.email || corrente?.azienda.email}</span>
+                    </label>
+                  )}
                 </div>
               )}
 

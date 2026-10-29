@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { giornoOra, nomeCampagna } from "@/lib/format";
 import { ESITO_CONTRATTO_LABEL, ESITO_INCONTRO_LABEL } from "@/lib/types";
 import EsitoForm from "./EsitoForm";
+import InviaCalendario from "./InviaCalendario";
+import { calendarioAttivo } from "@/lib/google";
 
 type Riga = {
   id: string;
@@ -14,6 +16,8 @@ type Riga = {
   esito_incontro: keyof typeof ESITO_INCONTRO_LABEL | null;
   esito_contratto: keyof typeof ESITO_CONTRATTO_LABEL | null;
   esito_note: string | null;
+  google_event_id: string | null;
+  meet_link: string | null;
   azienda: { id: string; ragione_sociale: string; indirizzo: string | null; comune: string | null; telefono: string | null } | null;
   referente: { nome: string; ruolo: string | null; telefono: string | null } | null;
   incaricato: { nome: string } | null;
@@ -38,7 +42,7 @@ export default async function AppuntamentiPage({ searchParams }: PageProps<"/app
     let q = supabase
       .from("appuntamenti")
       .select(
-        "id, inizio, fine, modalita, note, esito_incontro, esito_contratto, esito_note, " +
+        "id, inizio, fine, modalita, note, esito_incontro, esito_contratto, esito_note, google_event_id, meet_link, " +
           "azienda:aziende(id, ragione_sociale, indirizzo, comune, telefono), " +
           "referente:referenti(nome, ruolo, telefono), " +
           "incaricato:profili!appuntamenti_incaricato_id_fkey(nome), " +
@@ -67,6 +71,7 @@ export default async function AppuntamentiPage({ searchParams }: PageProps<"/app
   const { count: daCompilare } = await qc;
 
   const puoCompilare = p.ruolo !== "direzione";
+  const calendario = calendarioAttivo();
 
   return (
     <div className="flex flex-col gap-5 max-w-4xl">
@@ -116,7 +121,12 @@ export default async function AppuntamentiPage({ searchParams }: PageProps<"/app
                   <a className="btn btn-sm" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${r.azienda.ragione_sociale} ${r.azienda.indirizzo} ${r.azienda.comune ?? ""}`)}`}>Naviga</a>
                 )}
                 {r.azienda?.telefono && <a className="btn btn-sm" href={`tel:${r.azienda.telefono}`}>Chiama</a>}
+                {r.meet_link && <a className="btn btn-sm" target="_blank" rel="noreferrer" href={r.meet_link}>Apri Meet</a>}
+                {r.google_event_id && <span className="tag tag-blue self-center">Nel calendario</span>}
               </div>
+              {!r.google_event_id && calendario && (p.ruolo === "admin" || p.ruolo === "operatore") && new Date(r.fine) > new Date() && (
+                <InviaCalendario id={r.id} />
+              )}
               {r.esito_incontro && (
                 <div className="text-sm">
                   <span className="tag tag-blue">{ESITO_INCONTRO_LABEL[r.esito_incontro]}</span>{" "}

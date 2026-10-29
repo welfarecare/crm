@@ -60,3 +60,14 @@ cp .env.example .env.local   # e compila i valori
 npm install
 npm run dev
 ```
+
+---
+
+## Tappa 2 · Google Calendar (account aziendali welfarecare.org)
+
+Il CRM scrive gli appuntamenti nel calendario dell'incaricato e ne legge le disponibilità,
+tramite un **account di servizio** con **delega a livello di dominio** (solo calendario).
+
+Variabili su Vercel: `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` (Sensitive).
+Permessi da autorizzare nella Console di amministrazione Google:
+`https://www.googleapis.com/auth/calendar.events.owned,https://www.googleapis.com/auth/calendar.freebusy`
