@@ -12,7 +12,7 @@ export default async function ImportPage({ searchParams }: PageProps<"/import">)
   const { data } = await supabase.from("campagne").select("id, comune, edizione").neq("stato", "chiusa").order("comune");
   return (
     <ImportClient
-      campagne={(data ?? []).map((c) => ({ id: c.id, nome: nomeCampagna(c) }))}
+      campagne={(data ?? []).map((c) => ({ id: c.id, nome: nomeCampagna(c), comune: c.comune }))}
       campagnaIniziale={typeof sp.c === "string" ? sp.c : ""}
     />
   );
