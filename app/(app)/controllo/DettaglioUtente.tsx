@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { PERMESSI_LABEL, RUOLO_LABEL, STATO_CAMPAGNA_LABEL, type Permessi, type Profilo, type Ruolo, type StatoCampagna } from "@/lib/types";
+import { passwordCasuale, passwordValida, REGOLA_PASSWORD } from "@/lib/password";
 import { azzeraDoppiaVerifica, impostaAttivo, nuovaPassword, salvaUtente } from "./azioni";
 
 export default function DettaglioUtente({
@@ -48,6 +49,7 @@ export default function DettaglioUtente({
     });
   }
   function cambiaPw() {
+    if (!passwordValida(pw)) return setMsg({ ok: false, t: REGOLA_PASSWORD });
     start(async () => {
       const r = await nuovaPassword(utente.id, pw, utente.nome || utente.email);
       setMsg(r.ok ? { ok: true, t: "Nuova password impostata: comunicala a voce." } : { ok: false, t: r.errore });
@@ -127,7 +129,8 @@ export default function DettaglioUtente({
         <summary className="cursor-pointer text-text-secondary">Imposta una nuova password</summary>
         <div className="flex gap-2 mt-2">
           <label className="sr-only" htmlFor="u-pw">Nuova password</label>
-          <input id="u-pw" type="text" autoComplete="off" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="almeno 12 caratteri" />
+          <input id="u-pw" type="text" autoComplete="off" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="almeno 12 caratteri" className="font-mono" />
+          <button type="button" className="btn" onClick={() => setPw(passwordCasuale())}>Genera</button>
           <button className="btn" onClick={cambiaPw} disabled={pending || pw.length < 12}>Imposta</button>
         </div>
       </details>

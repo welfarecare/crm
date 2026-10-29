@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { passwordValida, REGOLA_PASSWORD } from "@/lib/password";
 
 export default function CambiaPassword() {
   const [pw, setPw] = useState("");
@@ -11,7 +12,7 @@ export default function CambiaPassword() {
 
   async function salva(e: React.FormEvent) {
     e.preventDefault();
-    if (pw.length < 12) return setMsg({ ok: false, t: "Usa almeno 12 caratteri, con maiuscole, minuscole e numeri." });
+    if (!passwordValida(pw)) return setMsg({ ok: false, t: REGOLA_PASSWORD });
     if (pw !== pw2) return setMsg({ ok: false, t: "Le due password non coincidono." });
     setBusy(true);
     const { error } = await createClient().auth.updateUser({ password: pw });

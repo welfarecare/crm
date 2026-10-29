@@ -4,13 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { RUOLO_LABEL, type Ruolo } from "@/lib/types";
 import { creaUtente } from "./azioni";
+import { passwordCasuale, passwordValida, REGOLA_PASSWORD } from "@/lib/password";
 
-function passwordCasuale() {
-  const c = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const a = new Uint32Array(14);
-  crypto.getRandomValues(a);
-  return Array.from(a, (n) => c[n % c.length]).join("");
-}
 
 export default function NuovoUtente() {
   const router = useRouter();
@@ -25,6 +20,7 @@ export default function NuovoUtente() {
 
   function crea(e: React.FormEvent) {
     e.preventDefault();
+    if (!passwordValida(f.password)) return setMsg({ ok: false, t: REGOLA_PASSWORD });
     start(async () => {
       const r = await creaUtente(f);
       if (!r.ok) return setMsg({ ok: false, t: r.errore });
@@ -48,8 +44,11 @@ export default function NuovoUtente() {
       {f.ruolo === "incaricato" && <div><label className="label" htmlFor="n-zona">Zona</label><input id="n-zona" value={f.zona} onChange={(e) => setF({ ...f, zona: e.target.value })} /></div>}
       <div>
         <label className="label" htmlFor="n-pw">Password temporanea</label>
-        <input id="n-pw" type="text" autoComplete="off" required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
-        <p className="text-xs text-text-secondary mt-1">L&apos;utente potrà cambiarla dal suo profilo.</p>
+        <div className="flex gap-2">
+          <input id="n-pw" type="text" autoComplete="off" required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} className="font-mono" />
+          <button type="button" className="btn" onClick={() => setF({ ...f, password: passwordCasuale() })}>Rigenera</button>
+        </div>
+        <p className="text-xs text-text-secondary mt-1">{REGOLA_PASSWORD} La gestisci tu: l&apos;utente non può cambiarla.</p>
       </div>
       {msg && <div className={`avviso ${msg.ok ? "avviso-ok" : "avviso-err"}`}>{msg.t}</div>}
       <div className="flex gap-2">
