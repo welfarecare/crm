@@ -27,7 +27,14 @@ export default async function ProfiloPage() {
           </>
         )}
       </section>
-      <CambiaPassword />
+      {p.ruolo === "admin" ? (
+        <CambiaPassword />
+      ) : (
+        <section className="card p-5 text-sm">
+          <h2 className="font-semibold mb-1">Password</h2>
+          <p className="text-text-secondary">La password è gestita dall&apos;amministratore. Se l&apos;hai dimenticata o pensi che qualcuno la conosca, chiedi a lui di impostarne una nuova.</p>
+        </section>
+      )}
     </div>
   );
 }
