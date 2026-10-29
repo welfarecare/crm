@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     voci.push({ href: "/aziende", label: "Aziende" });
   }
   if (puo(p, "importare") && p.ruolo !== "direzione" && p.ruolo !== "incaricato") voci.push({ href: "/import", label: "Importa lista" });
+  if (p.ruolo === "admin" || p.ruolo === "direzione") voci.push({ href: "/andamento", label: "Andamento" });
   if (p.ruolo === "admin") voci.push({ href: "/controllo", label: "Centro di controllo" });
 
   return (

@@ -47,7 +47,7 @@ export function homePerRuolo(r: Ruolo) {
     case "incaricato":
       return "/appuntamenti";
     case "direzione":
-      return "/campagne";
+      return "/andamento";
     default:
       return "/coda";
   }
