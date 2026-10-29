@@ -11,7 +11,7 @@ export default function CambiaPassword() {
 
   async function salva(e: React.FormEvent) {
     e.preventDefault();
-    if (pw.length < 10) return setMsg({ ok: false, t: "Usa almeno 10 caratteri." });
+    if (pw.length < 12) return setMsg({ ok: false, t: "Usa almeno 12 caratteri, con maiuscole, minuscole e numeri." });
     if (pw !== pw2) return setMsg({ ok: false, t: "Le due password non coincidono." });
     setBusy(true);
     const { error } = await createClient().auth.updateUser({ password: pw });

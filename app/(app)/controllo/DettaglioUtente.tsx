@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { PERMESSI_LABEL, RUOLO_LABEL, STATO_CAMPAGNA_LABEL, type Permessi, type Profilo, type Ruolo, type StatoCampagna } from "@/lib/types";
-import { impostaAttivo, nuovaPassword, salvaUtente } from "./azioni";
+import { azzeraDoppiaVerifica, impostaAttivo, nuovaPassword, salvaUtente } from "./azioni";
 
 export default function DettaglioUtente({
   utente, sonoIo, campagne, assegnate,
@@ -38,6 +38,13 @@ export default function DettaglioUtente({
       const r = await impostaAttivo(utente.id, v, utente.nome || utente.email);
       setMsg(r.ok ? { ok: true, t: v ? "Utente riattivato." : "Utente disattivato." } : { ok: false, t: r.errore });
       if (r.ok) router.refresh();
+    });
+  }
+  function azzeraMfa() {
+    if (!confirm("Azzerare la doppia verifica? Al prossimo accesso dovrà configurarla di nuovo con il telefono.")) return;
+    start(async () => {
+      const r = await azzeraDoppiaVerifica(utente.id, utente.nome || utente.email);
+      setMsg(r.ok ? { ok: true, t: "Doppia verifica azzerata." } : { ok: false, t: r.errore });
     });
   }
   function cambiaPw() {
@@ -120,10 +127,15 @@ export default function DettaglioUtente({
         <summary className="cursor-pointer text-text-secondary">Imposta una nuova password</summary>
         <div className="flex gap-2 mt-2">
           <label className="sr-only" htmlFor="u-pw">Nuova password</label>
-          <input id="u-pw" type="text" autoComplete="off" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="almeno 10 caratteri" />
-          <button className="btn" onClick={cambiaPw} disabled={pending || pw.length < 10}>Imposta</button>
+          <input id="u-pw" type="text" autoComplete="off" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="almeno 12 caratteri" />
+          <button className="btn" onClick={cambiaPw} disabled={pending || pw.length < 12}>Imposta</button>
         </div>
       </details>
+      {!sonoIo && (
+        <button className="btn btn-sm self-start" onClick={azzeraMfa} disabled={pending}>
+          Azzera doppia verifica (telefono perso o cambiato)
+        </button>
+      )}
     </section>
   );
 }

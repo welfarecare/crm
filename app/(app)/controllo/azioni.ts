@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { getProfilo } from "@/lib/auth";
+import { getProfilo, livelloMfa } from "@/lib/auth";
 import type { Permessi, Ruolo } from "@/lib/types";
 
 type Esito = { ok: true; id?: string } | { ok: false; errore: string };
@@ -11,6 +11,7 @@ type Esito = { ok: true; id?: string } | { ok: false; errore: string };
 async function soloAdmin() {
   const p = await getProfilo();
   if (!p || p.ruolo !== "admin") throw new Error("Solo l'amministratore può farlo");
+  if ((await livelloMfa()).attuale !== "aal2") throw new Error("Serve la doppia verifica: esci e rientra con il codice dal telefono");
   return p;
 }
 
@@ -22,7 +23,7 @@ async function registra(azione: string) {
 export async function creaUtente(dati: { email: string; nome: string; ruolo: Ruolo; password: string; zona: string }): Promise<Esito> {
   try {
     await soloAdmin();
-    if (dati.password.length < 10) return { ok: false, errore: "La password temporanea deve avere almeno 10 caratteri." };
+    if (dati.password.length < 12) return { ok: false, errore: "La password temporanea deve avere almeno 12 caratteri." };
     const admin = createAdminClient();
     const { data, error } = await admin.auth.admin.createUser({
       email: dati.email.trim().toLowerCase(),
@@ -107,10 +108,27 @@ export async function impostaAttivo(id: string, attivo: boolean, nome: string): 
 export async function nuovaPassword(id: string, password: string, nome: string): Promise<Esito> {
   try {
     await soloAdmin();
-    if (password.length < 10) return { ok: false, errore: "Almeno 10 caratteri." };
+    if (password.length < 12) return { ok: false, errore: "Almeno 12 caratteri." };
     const { error } = await createAdminClient().auth.admin.updateUserById(id, { password });
     if (error) return { ok: false, errore: error.message };
     await registra(`ha impostato una nuova password per ${nome}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, errore: (e as Error).message };
+  }
+}
+
+export async function azzeraDoppiaVerifica(id: string, nome: string): Promise<Esito> {
+  try {
+    await soloAdmin();
+    const admin = createAdminClient();
+    const { data, error } = await admin.auth.admin.mfa.listFactors({ userId: id });
+    if (error) return { ok: false, errore: error.message };
+    for (const f of data.factors) {
+      const { error: e } = await admin.auth.admin.mfa.deleteFactor({ id: f.id, userId: id });
+      if (e) return { ok: false, errore: e.message };
+    }
+    await registra(`ha azzerato la doppia verifica di ${nome}`);
     return { ok: true };
   } catch (e) {
     return { ok: false, errore: (e as Error).message };

@@ -22,6 +22,22 @@ export async function richiediProfilo(ruoli?: Ruolo[]) {
   return p;
 }
 
+// Ruoli per cui la doppia verifica è obbligatoria (lo controlla anche il database)
+export const RUOLI_MFA: Ruolo[] = ["admin", "direzione"];
+
+export const livelloMfa = cache(async () => {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  return { attuale: data?.currentLevel ?? "aal1", possibile: data?.nextLevel ?? "aal1" };
+});
+
+/** true se l'utente deve ancora inserire il codice dal telefono */
+export async function serveVerifica(p: Profilo) {
+  const l = await livelloMfa();
+  if (l.attuale === "aal2") return false;
+  return RUOLI_MFA.includes(p.ruolo) || l.possibile === "aal2";
+}
+
 export function puo(p: Profilo, permesso: keyof Permessi) {
   return p.ruolo === "admin" || !!p.permessi?.[permesso];
 }

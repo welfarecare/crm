@@ -26,6 +26,8 @@ Tappa 2: Google Calendar e mail di conferma. Tappa 3: Gemini e report della dire
 3. **Authentication → Sign In / Providers → Email**: disattiva **Allow new users to sign up** (gli utenti li crea solo l'amministratore).
 4. **Authentication → Users → Add user → Create new user**: la tua email e una password, spunta **Auto Confirm User**.
 5. **SQL Editor** → esegui `supabase/04_primo_admin.sql` (con la tua email): diventi amministratore.
+6. **Authentication → Providers → Email**: lunghezza minima password **12**, requisiti **lettere minuscole, maiuscole e numeri**.
+7. Al primo accesso l'app chiede di attivare la **doppia verifica** (obbligatoria per amministratore e direzione).
 
 ### 2. Vercel
 1. **Add New → Project** → importa il repository GitHub.

@@ -1,9 +1,11 @@
 import Sidebar from "@/components/Sidebar";
-import { richiediProfilo, puo } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { richiediProfilo, puo, serveVerifica } from "@/lib/auth";
 import { RUOLO_LABEL } from "@/lib/types";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const p = await richiediProfilo();
+  if (await serveVerifica(p)) redirect("/sicurezza");
 
   const voci: { href: string; label: string }[] = [];
   if (p.ruolo === "operatore" || p.ruolo === "admin") voci.push({ href: "/coda", label: "Coda chiamate" });

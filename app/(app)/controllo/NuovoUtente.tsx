@@ -7,7 +7,7 @@ import { creaUtente } from "./azioni";
 
 function passwordCasuale() {
   const c = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const a = new Uint32Array(12);
+  const a = new Uint32Array(14);
   crypto.getRandomValues(a);
   return Array.from(a, (n) => c[n % c.length]).join("");
 }
